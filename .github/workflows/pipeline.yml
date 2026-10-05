@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # cała historia — klucz nie może być w żadnym commicie
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
