@@ -7,7 +7,8 @@
   "vars": {
     // Tylko origin (bez ścieżki). Lokalnie nadpisywane przez worker/.env.
     "ALLOWED_ORIGINS": "https://konradciurkiewicz.github.io",
-    "GEMINI_MODEL": "gemini-2.5-flash",
+    // Łańcuch modeli: kolejny używany przy przeciążeniu (429/503) poprzedniego. Patrz ADR 0005.
+    "GEMINI_MODELS": "gemini-3.5-flash,gemini-2.5-flash,gemini-3.5-flash-lite",
   },
   // GEMINI_API_KEY — sekret: `npx wrangler secret put GEMINI_API_KEY` (nigdy w tym pliku).
   "ratelimits": [

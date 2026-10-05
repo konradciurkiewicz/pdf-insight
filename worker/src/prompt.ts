@@ -13,14 +13,17 @@ Output rules (the response is validated against a strict JSON schema):
   "raport" (report), "inne" (anything else).
 - document.title: the document's own title as written in it, otherwise null.
 - document.date: the main date of the document (issue/signing date) as YYYY-MM-DD, otherwise null.
-- summary: 3 to 5 complete sentences describing what the document is and its most important content.
+- summary: 3 to 5 complete sentences with the CONCRETE content: who, what, key amounts, dates and
+  obligations. Do not describe the document's structure ("the document specifies the terms...") —
+  state the terms themselves.
 - keyPoints: 3 to 7 short, concrete items (facts, obligations, numbers, deadlines).
 - entities.organizations / entities.people: names exactly as written, without duplicates.
   Do not list generic roles ("Zamawiający", "the Client") as people.
 - amounts: only monetary amounts with a determinable currency. value is a number
   (dot as decimal separator, no thousands separators). currency is an ISO 4217 code
   (e.g. "zł" -> "PLN", "€" -> "EUR"). context briefly says what the amount is.
-- dates: only full dates (day, month, year) as YYYY-MM-DD, each with a short context.
+- dates: only dates written in the document with day, month AND year, as YYYY-MM-DD, each with a
+  short context. Never construct a date from a year or month alone (e.g. "rok 2025" is NOT 2025-01-01).
 - keywords: 3 to 10 topic keywords.
 `.trim()
 

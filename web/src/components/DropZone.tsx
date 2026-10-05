@@ -43,7 +43,7 @@ export function DropZone({ onFile, disabled = false }: DropZoneProps) {
       </svg>
       <p className="dropzone__title">Przeciągnij i upuść plik PDF</p>
       <p className="dropzone__hint" id={hintId}>
-        lub wybierz go z dysku · tylko PDF · maks. 10 MB
+        lub wybierz go z dysku · tylko PDF · maks.&nbsp;10&nbsp;MB
       </p>
       <button
         type="button"

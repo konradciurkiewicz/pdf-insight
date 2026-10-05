@@ -1,6 +1,6 @@
 # 0002 — Cloudflare Workers + Gemini 2.5 Flash
 
-**Status:** przyjęta
+**Status:** przyjęta; wybór modelu zastąpiony przez [0005](0005-model-fallback-chain.md)
 
 ## Kontekst
 
