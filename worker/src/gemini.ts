@@ -1,7 +1,8 @@
 import { z } from 'zod'
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
-const REQUEST_TIMEOUT_MS = 25_000
+/** Na model — przy przeciążeniu lepiej szybko przejść na kolejny, niż czekać. */
+const REQUEST_TIMEOUT_MS = 20_000
 
 /** Błąd po stronie dostawcy AI (sieć, limit, 5xx). `retryable` = warto spróbować ponownie. */
 export class UpstreamError extends Error {
@@ -38,15 +39,51 @@ const geminiResponseSchema = z.object({
   promptFeedback: z.object({ blockReason: z.string().optional() }).optional(),
 })
 
+/**
+ * Gemini 2.x wyłącza „myślenie” przez `thinkingBudget: 0`; Gemini 3.x odrzuca ten parametr
+ * i wymaga `thinkingLevel`. Ekstrakcja nie potrzebuje rozumowania — minimum skraca czas odpowiedzi.
+ */
+export function thinkingConfigFor(model: string): Record<string, unknown> {
+  return /^gemini-2\./.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: 'minimal' }
+}
+
+export function parseModelList(value: string): string[] {
+  return value
+    .split(',')
+    .map((model) => model.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Klient z łańcuchem modeli: przy przeciążeniu (429/503) lub timeoucie próbujemy kolejnego modelu.
+ * Darmowy plan Gemini regularnie zwraca 503 „high demand” — pojedynczy model to za mało na demo.
+ */
 export function createGeminiClient(options: {
   apiKey: string
-  model: string
+  models: string[]
   fetchFn?: typeof fetch
 }): GenerateJson {
-  const { apiKey, model, fetchFn = fetch } = options
-  const url = `${API_BASE}/${encodeURIComponent(model)}:generateContent`
+  const { apiKey, models, fetchFn = fetch } = options
+  if (models.length === 0) throw new Error('No Gemini models configured')
 
-  return async ({ system, user, responseSchema }) => {
+  return async (request) => {
+    let lastError: UpstreamError | null = null
+    for (const model of models) {
+      try {
+        return await callModel(model, request)
+      } catch (error) {
+        if (!(error instanceof UpstreamError) || !error.retryable) throw error
+        lastError = error
+      }
+    }
+    throw lastError ?? new UpstreamError('All models failed', 503, true)
+  }
+
+  async function callModel(
+    model: string,
+    { system, user, responseSchema }: GenerateJsonRequest,
+  ): Promise<string> {
+    const url = `${API_BASE}/${encodeURIComponent(model)}:generateContent`
     let response: Response
     try {
       response = await fetchFn(url, {
@@ -60,26 +97,25 @@ export function createGeminiClient(options: {
             temperature: 0.1,
             responseMimeType: 'application/json',
             responseJsonSchema: responseSchema,
-            // Ekstrakcja nie wymaga „myślenia” — wyłączenie skraca czas odpowiedzi (cel: < 30 s).
-            thinkingConfig: { thinkingBudget: 0 },
+            thinkingConfig: thinkingConfigFor(model),
           },
         }),
       })
     } catch (error) {
       const timedOut = error instanceof Error && error.name === 'TimeoutError'
-      throw new UpstreamError(timedOut ? 'Gemini timeout' : 'Gemini network error', 504, true)
+      throw new UpstreamError(`${model}: ${timedOut ? 'timeout' : 'network error'}`, 504, true)
     }
 
     if (!response.ok) {
       // Treść błędu dostawcy logujemy tylko po stronie serwera, nie przekazujemy klientowi.
-      const detail = (await response.text()).slice(0, 500)
-      console.error(`Gemini HTTP ${response.status}: ${detail}`)
+      const detail = (await response.text()).slice(0, 300)
+      console.error(`Gemini ${model} HTTP ${response.status}: ${detail}`)
       const retryable = response.status === 429 || response.status >= 500
-      throw new UpstreamError(`Gemini HTTP ${response.status}`, response.status, retryable)
+      throw new UpstreamError(`${model}: HTTP ${response.status}`, response.status, retryable)
     }
 
     const parsed = geminiResponseSchema.safeParse(await response.json())
-    if (!parsed.success) throw new UpstreamError('Unexpected Gemini response shape', 502, true)
+    if (!parsed.success) throw new UpstreamError(`${model}: unexpected response shape`, 502, true)
 
     const { candidates, promptFeedback } = parsed.data
     if (promptFeedback?.blockReason) {
@@ -88,7 +124,8 @@ export function createGeminiClient(options: {
     const candidate = candidates?.[0]
     const text = candidate?.content?.parts.map((part) => part.text ?? '').join('') ?? ''
     if (!text) {
-      throw new UpstreamError(`Empty response (${candidate?.finishReason ?? 'unknown'})`, 502, true)
+      const reason = candidate?.finishReason ?? 'unknown'
+      throw new UpstreamError(`${model}: empty response (${reason})`, 502, true)
     }
     return text
   }

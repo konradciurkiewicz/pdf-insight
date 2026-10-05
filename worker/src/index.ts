@@ -1,6 +1,6 @@
 import { analyzeRequestSchema, LIMITS } from '@pdf-insight/shared'
 import { AiInvalidResponseError, analyzeDocument } from './analyze'
-import { createGeminiClient, UpstreamError } from './gemini'
+import { createGeminiClient, parseModelList, UpstreamError } from './gemini'
 import { corsHeaders, errorResponse, jsonResponse, parseAllowedOrigins } from './http'
 
 /** Sekret ustawiany przez `wrangler secret put` — nie występuje w wrangler.jsonc, więc nie ma go w typach. */
@@ -75,7 +75,10 @@ export default {
         : errorResponse('BAD_REQUEST', 'Nieprawidłowe dane dokumentu.', 400, cors)
     }
 
-    const generate = createGeminiClient({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL })
+    const generate = createGeminiClient({
+      apiKey: env.GEMINI_API_KEY,
+      models: parseModelList(env.GEMINI_MODELS),
+    })
     try {
       const result = await analyzeDocument(parsed.data, generate)
       return jsonResponse({ ok: true, result }, 200, cors)
