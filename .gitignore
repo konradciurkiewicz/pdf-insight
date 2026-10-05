@@ -1,0 +1,29 @@
+# dependencies & build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# secrets — never commit (see .env.example files)
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+
+# cloudflare / wrangler local state
+.wrangler/
+
+# local scratch (recruitment brief etc.)
+tmp/
+
+# editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Claude Code local-only settings
+.claude/settings.local.json

@@ -1,0 +1,24 @@
+{
+  "name": "pdf-insight",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "web",
+    "worker"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w web",
+    "dev:worker": "npm run dev -w worker",
+    "build": "npm run build -w web",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm run test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
