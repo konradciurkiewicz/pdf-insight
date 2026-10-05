@@ -6,7 +6,9 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['**/dist', '**/coverage', '**/.wrangler', 'tmp', 'worker/worker-configuration.d.ts'] },
+  {
+    ignores: ['**/dist', '**/coverage', '**/.wrangler', 'tmp', 'worker/worker-configuration.d.ts'],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.strict],
     files: ['**/*.{ts,tsx}'],

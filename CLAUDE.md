@@ -5,13 +5,13 @@ do LLM (Gemini) → wynik walidowany schematem Zod → widok + eksport JSON.
 
 Ten plik to punkt wejścia. Szczegóły są w `docs/` — czytaj je **tylko gdy dotyczą zadania**:
 
-| Plik                         | Kiedy czytać                                            |
-| ---------------------------- | ------------------------------------------------------- |
-| `docs/architecture.md`       | Zmiany przepływu danych, nowe endpointy, deploy         |
-| `docs/decisions/`            | Zanim zmienisz coś, co wygląda na celowy wybór (ADR)    |
-| `docs/schema.md`             | Zmiany w formacie wyniku / prompcie                     |
-| `docs/security.md`           | Cokolwiek dotykającego kluczy, CORS, limitów, promptów  |
-| `docs/known-issues.md`       | Przed debugowaniem — może to znany problem              |
+| Plik                   | Kiedy czytać                                           |
+| ---------------------- | ------------------------------------------------------ |
+| `docs/architecture.md` | Zmiany przepływu danych, nowe endpointy, deploy        |
+| `docs/decisions/`      | Zanim zmienisz coś, co wygląda na celowy wybór (ADR)   |
+| `docs/schema.md`       | Zmiany w formacie wyniku / prompcie                    |
+| `docs/security.md`     | Cokolwiek dotykającego kluczy, CORS, limitów, promptów |
+| `docs/known-issues.md` | Przed debugowaniem — może to znany problem             |
 
 ## Struktura (npm workspaces)
 

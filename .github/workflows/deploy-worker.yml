@@ -1,0 +1,39 @@
+name: Deploy Worker
+
+# Worker wdrażany tylko przy zmianach backendu lub wspólnego schematu.
+# GEMINI_API_KEY NIE przechodzi przez GitHub — jest ustawiony jednorazowo w Cloudflare
+# (`wrangler secret put`) i deploy go nie nadpisuje.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - 'shared/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w worker
+      - run: npx vitest run worker shared
+      - name: wrangler deploy
+        run: npx wrangler deploy
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
