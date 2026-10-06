@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createGeminiClient, parseModelList, thinkingConfigFor, UpstreamError } from './gemini'
+import {
+  buildRequestBody,
+  createGeminiClient,
+  parseModelList,
+  thinkingConfigFor,
+  UpstreamError,
+} from './gemini'
 
 const request = { system: 'sys', user: 'doc', responseSchema: { type: 'object' } }
 
@@ -60,5 +66,23 @@ describe('konfiguracja modeli', () => {
       'gemini-3.5-flash',
       'gemini-2.5-flash',
     ])
+  })
+})
+
+describe('buildRequestBody — skany (OCR)', () => {
+  it('bez PDF wysyła tylko tekst', () => {
+    const body = JSON.parse(buildRequestBody('gemini-3.5-flash', request))
+    expect(body.contents[0].parts).toEqual([{ text: 'doc' }])
+  })
+
+  it('z PDF dołącza plik jako inlineData przed tekstem, bez zmiany base64', () => {
+    const pdfBase64 = 'JVBERi0xLjcK+/9az=='
+    const body = JSON.parse(buildRequestBody('gemini-3.5-flash', { ...request, pdfBase64 }))
+
+    expect(body.contents[0].parts).toEqual([
+      { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
+      { text: 'doc' },
+    ])
+    expect(body.systemInstruction.parts[0].text).toBe('sys')
   })
 })

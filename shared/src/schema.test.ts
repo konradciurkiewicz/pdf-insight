@@ -6,7 +6,7 @@ import {
   type AiAnalysis,
   type AnalysisResult,
 } from './schema'
-import { analyzeRequestSchema } from './api'
+import { analyzeRequestSchema, analyzeScanMetaSchema } from './api'
 
 /** Przykład dosłownie z briefu (sekcja 04), uzupełniony do 3 keyPoints. */
 const briefExample: AnalysisResult = {
@@ -126,5 +126,19 @@ describe('analyzeRequestSchema', () => {
     expect(analyzeRequestSchema.safeParse({ ...valid, text: 'x'.repeat(400_001) }).success).toBe(
       false,
     )
+  })
+})
+
+describe('analyzeScanMetaSchema', () => {
+  it('przyjmuje liczbę stron jako tekst z query string', () => {
+    expect(analyzeScanMetaSchema.parse({ fileName: 'skan.pdf', pages: '3' })).toEqual({
+      fileName: 'skan.pdf',
+      pages: 3,
+    })
+  })
+
+  it('odrzuca skan powyżej limitu stron i brak nazwy pliku', () => {
+    expect(analyzeScanMetaSchema.safeParse({ fileName: 'a.pdf', pages: '21' }).success).toBe(false)
+    expect(analyzeScanMetaSchema.safeParse({ fileName: null, pages: '1' }).success).toBe(false)
   })
 })
