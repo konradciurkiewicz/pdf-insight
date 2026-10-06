@@ -40,12 +40,21 @@ przed commitem, a działanie z prawdziwym modelem było sprawdzane ręcznie na �
 
    Ten krok wykrył trzy problemy niewidoczne w testach jednostkowych (punkty 6–8 niżej).
 
+5. **OCR (F-10) z kontrolą kosztów CPU**
+
+   > „Dodaj OCR przez Gemini — nie bawimy się w osobnego dostawcę.”
+
+   Przed implementacją sprawdzone ryzyko: darmowy plan Workers daje ~10 ms CPU na żądanie, a skan
+   trzeba zakodować w base64. Pomiar w lokalnym `workerd`: natywne `Uint8Array.toBase64` koduje 4 MB
+   w ~2 ms — dlatego plik idzie z przeglądarki binarnie, a base64 jest wstawiane do żądania Gemini
+   bez ponownej serializacji ([ADR 0006](docs/decisions/0006-ocr-via-gemini.md)).
+
 ## Gdzie AI się pomyliło i jak to poprawiono
 
 | #   | Pomyłka                                                                                                                                                                                     | Jak wykryte                          | Poprawka                                                                                                                                                                                                             |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Kod pdf.js napisany pod starsze API: opcja `isEvalSupported` i `pdf.destroy()` nie istnieją w pdf.js 6                                                                                      | `tsc` (strict)                       | Sprawdzenie `.d.ts` biblioteki; `loadingTask.destroy()`                                                                                                                                                              |
-| 2   | W regexie `/[ \t ]/` zapisany dosłowny znak NBSP zamiast sekwencji ` `                                                                                                                      | ESLint `no-irregular-whitespace`     | `/[^\S\n]+/` — czytelniej i bez niewidocznych znaków; test jednostkowy                                                                                                                                               |
+| 2   | W regexie `/[ \tXX]/` (XX = U+00A0) zapisany dosłowny niewidoczny znak NBSP zamiast sekwencji ucieczki `\u00a0`                                                                             | ESLint `no-irregular-whitespace`     | `/[^\S\n]+/` — czytelniej i bez niewidocznych znaków; test jednostkowy                                                                                                                                               |
 | 3   | Odczyt `useRef().current` podczas renderu (stan „ponów analizę”)                                                                                                                            | ESLint `react-hooks/refs`            | Dane do ponowienia przeniesione do stanu (`phase.retry`)                                                                                                                                                             |
 | 4   | `extend()` w Zod dopisuje pola na końcu — eksportowany JSON miałby `fileName`/`pages` na końcu `document`, inaczej niż w briefie                                                            | Przegląd kodu                        | Jawna kolejność pól w schemacie + test kolejności kluczy                                                                                                                                                             |
 | 5   | Parametry konstruktora `readonly x` niedozwolone przy `erasableSyntaxOnly` (TS 6)                                                                                                           | `tsc`                                | Zwykłe pola klasy                                                                                                                                                                                                    |

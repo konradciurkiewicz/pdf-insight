@@ -48,6 +48,11 @@
 | 502    | `AI_INVALID_RESPONSE` | 2× odpowiedź niezgodna ze schematem    |
 | 503    | `AI_UNAVAILABLE`      | Błąd / limit po stronie Gemini         |
 
+`POST /api/analyze-scan?fileName=…&pages=…` — body: surowe bajty PDF (`Content-Type: application/pdf`),
+dla skanów bez warstwy tekstowej (F-10). Ta sama odpowiedź i kody błędów; dodatkowo 413 dla
+skanu > 20 stron lub > 10 MB i 400 dla pliku bez sygnatury `%PDF-`
+([ADR 0006](decisions/0006-ocr-via-gemini.md)).
+
 `GET /api/health` — `{ ok: true }`.
 
 ## Deploy
