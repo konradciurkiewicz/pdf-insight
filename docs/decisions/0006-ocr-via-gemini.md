@@ -27,6 +27,19 @@ Dlatego plik idzie z przeglądarki binarnie (bez parsowania JSON z base64 po str
 narzutu 33% na łączu), a base64 jest wstawiane do gotowego JSON-a żądania zamiast przechodzić przez
 `JSON.stringify`.
 
+## Pomiar na produkcji (`wrangler tail`)
+
+| Skan    | CPU   | Czas całkowity | Wynik |
+| ------- | ----- | -------------- | ----- |
+| 158 KB  | 6 ms  | 15,7 s         | ok    |
+| 4,06 MB | 54 ms | 4,9 s          | ok    |
+
+Lokalny mikropomiar samego `toBase64` (~2 ms / 4 MB) **zaniżał** koszt — pomijał składanie strumienia,
+budowę JSON i kodowanie body żądania. Skan bliski limitu przekracza nominalne 10 ms CPU darmowego
+planu; na tym koncie żądanie się powiodło, ale Cloudflare może ten limit egzekwować (błąd 1102).
+Plan B bez zmian w kodzie: obniżyć `LIMITS.maxScanBytes` (koszt rośnie liniowo, ~12 ms/MB) albo
+plan Workers Paid.
+
 ## Konsekwencje
 
 - (+) Ten sam dostawca i klucz; jakość OCR wystarczająca dla polskich dokumentów (test: skan umowy
