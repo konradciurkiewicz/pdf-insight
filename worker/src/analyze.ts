@@ -5,12 +5,15 @@ import {
   type AiAnalysis,
   type AnalysisResult,
   type AnalyzeRequest,
+  type AnalyzeScanMeta,
 } from '@pdf-insight/shared'
 import { splitIntoChunks } from './chunking'
 import { UpstreamError, type GenerateJson } from './gemini'
 import {
   ANALYSIS_SYSTEM_PROMPT,
   MERGE_SYSTEM_PROMPT,
+  SCAN_SYSTEM_PROMPT,
+  SCAN_USER_MESSAGE,
   buildDocumentMessage,
   buildMergeMessage,
   buildRetryNote,
@@ -36,6 +39,7 @@ async function generateValidated(
   generate: GenerateJson,
   system: string,
   user: string,
+  pdfBase64?: string,
 ): Promise<AiAnalysis> {
   let problem: string | null = null
 
@@ -45,7 +49,7 @@ async function generateValidated(
 
     let raw: string
     try {
-      raw = await generate({ system, user: prompt, responseSchema })
+      raw = await generate({ system, user: prompt, responseSchema, pdfBase64 })
     } catch (error) {
       if (error instanceof UpstreamError && error.retryable && !isLastAttempt) continue
       throw error
@@ -134,4 +138,17 @@ export async function analyzeDocument(
   )
   const merged = await generateValidated(generate, MERGE_SYSTEM_PROMPT, buildMergeMessage(partials))
   return buildAnalysisResult({ ...merged, ...mergeFacts(partials) }, file)
+}
+
+/**
+ * Skan bez warstwy tekstowej (brief F-10): Gemini dostaje sam plik PDF i odczytuje go wizualnie.
+ * Bez dzielenia na fragmenty — liczbę stron ogranicza `LIMITS.maxScanPages`.
+ */
+export async function analyzeScan(
+  meta: AnalyzeScanMeta,
+  pdfBase64: string,
+  generate: GenerateJson,
+): Promise<AnalysisResult> {
+  const ai = await generateValidated(generate, SCAN_SYSTEM_PROMPT, SCAN_USER_MESSAGE, pdfBase64)
+  return buildAnalysisResult(ai, meta)
 }

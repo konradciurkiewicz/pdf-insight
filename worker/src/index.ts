@@ -1,6 +1,13 @@
-import { analyzeRequestSchema, LIMITS } from '@pdf-insight/shared'
-import { AiInvalidResponseError, analyzeDocument } from './analyze'
-import { createGeminiClient, parseModelList, UpstreamError } from './gemini'
+import {
+  analyzeRequestSchema,
+  analyzeScanMetaSchema,
+  LIMITS,
+  SCAN_HEADERS,
+  type AnalysisResult,
+  type AnalyzeErrorCode,
+} from '@pdf-insight/shared'
+import { AiInvalidResponseError, analyzeDocument, analyzeScan } from './analyze'
+import { createGeminiClient, parseModelList, UpstreamError, type GenerateJson } from './gemini'
 import { corsHeaders, errorResponse, jsonResponse, parseAllowedOrigins } from './http'
 
 /** Sekret ustawiany przez `wrangler secret put` — nie występuje w wrangler.jsonc, więc nie ma go w typach. */
@@ -9,7 +16,113 @@ export interface WorkerEnv extends Env {
 }
 
 /** Tekst w UTF-8 to maks. 4 bajty na znak + narzut JSON. Ucinamy zbyt duże żądania przed parsowaniem. */
-const MAX_BODY_BYTES = LIMITS.maxTextChars * 4 + 10_000
+const MAX_TEXT_BODY_BYTES = LIMITS.maxTextChars * 4 + 10_000
+
+const ROUTES = new Set(['/api/analyze', '/api/analyze-scan'])
+
+/** Błąd żądania z gotowym komunikatem dla użytkownika. */
+class RequestError extends Error {
+  constructor(
+    readonly code: AnalyzeErrorCode,
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'RequestError'
+  }
+}
+
+function tooLarge(message = 'Dokument jest zbyt duży do analizy.') {
+  return new RequestError('PAYLOAD_TOO_LARGE', message, 413)
+}
+
+/** Odrzuca żądanie po nagłówku Content-Length, zanim wczytamy body. */
+function assertDeclaredLength(request: Request, maxBytes: number) {
+  const declared = Number(request.headers.get('Content-Length') ?? '0')
+  if (declared > maxBytes) throw tooLarge()
+}
+
+/**
+ * Czyta body strumieniowo i przerywa po przekroczeniu limitu — Content-Length może nie istnieć
+ * (Transfer-Encoding: chunked), więc nie wczytujemy całości „na ślepo”.
+ */
+async function readBytesLimited(request: Request, maxBytes: number): Promise<Uint8Array> {
+  const reader = request.body?.getReader()
+  if (!reader) return new Uint8Array()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel()
+      throw tooLarge('Skan jest zbyt duży do rozpoznania tekstu.')
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
+async function handleText(request: Request, generate: GenerateJson): Promise<AnalysisResult> {
+  assertDeclaredLength(request, MAX_TEXT_BODY_BYTES)
+  const rawBody = await request.text()
+  if (rawBody.length > MAX_TEXT_BODY_BYTES) throw tooLarge()
+
+  let body: unknown
+  try {
+    body = JSON.parse(rawBody)
+  } catch {
+    throw new RequestError('BAD_REQUEST', 'Nieprawidłowy format żądania.', 400)
+  }
+  const parsed = analyzeRequestSchema.safeParse(body)
+  if (!parsed.success) {
+    const tooLong = parsed.error.issues.some((issue) => issue.code === 'too_big')
+    throw tooLong
+      ? tooLarge('Dokument zawiera zbyt dużo tekstu.')
+      : new RequestError('BAD_REQUEST', 'Nieprawidłowe dane dokumentu.', 400)
+  }
+  return analyzeDocument(parsed.data, generate)
+}
+
+/** F-10: skan bez warstwy tekstowej — surowe bajty PDF w body, metadane w nagłówkach. */
+async function handleScan(request: Request, generate: GenerateJson): Promise<AnalysisResult> {
+  let fileName: string | null = null
+  try {
+    fileName = decodeURIComponent(request.headers.get(SCAN_HEADERS.fileName) ?? '')
+  } catch {
+    // Niepoprawne kodowanie — walidacja poniżej odrzuci pustą nazwę.
+  }
+  const meta = analyzeScanMetaSchema.safeParse({
+    fileName,
+    pages: request.headers.get(SCAN_HEADERS.pages),
+  })
+  if (!meta.success) {
+    const tooManyPages = meta.error.issues.some((issue) => issue.path[0] === 'pages')
+    throw tooManyPages
+      ? tooLarge(`Skan może mieć maksymalnie ${LIMITS.maxScanPages} stron.`)
+      : new RequestError('BAD_REQUEST', 'Nieprawidłowe dane dokumentu.', 400)
+  }
+  if (request.headers.get('Content-Type') !== 'application/pdf') {
+    throw new RequestError('BAD_REQUEST', 'Oczekiwano pliku PDF.', 400)
+  }
+
+  // Rozmiar to jedyna granica, której klient nie może podrobić (liczbę stron deklaruje sam).
+  assertDeclaredLength(request, LIMITS.maxScanBytes)
+  const bytes = await readBytesLimited(request, LIMITS.maxScanBytes)
+  // Ta sama kontrola sygnatury co we frontendzie — nie ufamy klientowi.
+  if (!new TextDecoder().decode(bytes.subarray(0, 1024)).includes('%PDF-')) {
+    throw new RequestError('BAD_REQUEST', 'Plik nie jest poprawnym dokumentem PDF.', 400)
+  }
+
+  return analyzeScan(meta.data, bytes.toBase64(), generate)
+}
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -21,7 +134,7 @@ export default {
     if (url.pathname === '/api/health' && request.method === 'GET') {
       return jsonResponse({ ok: true }, 200, cors)
     }
-    if (url.pathname !== '/api/analyze') {
+    if (!ROUTES.has(url.pathname)) {
       return errorResponse('BAD_REQUEST', 'Nie znaleziono.', 404, cors)
     }
     if (request.method === 'OPTIONS') {
@@ -52,37 +165,20 @@ export default {
       )
     }
 
-    const declaredLength = Number(request.headers.get('Content-Length') ?? '0')
-    if (declaredLength > MAX_BODY_BYTES) {
-      return errorResponse('PAYLOAD_TOO_LARGE', 'Dokument jest zbyt duży do analizy.', 413, cors)
-    }
-    const rawBody = await request.text()
-    if (rawBody.length > MAX_BODY_BYTES) {
-      return errorResponse('PAYLOAD_TOO_LARGE', 'Dokument jest zbyt duży do analizy.', 413, cors)
-    }
-
-    let body: unknown
-    try {
-      body = JSON.parse(rawBody)
-    } catch {
-      return errorResponse('BAD_REQUEST', 'Nieprawidłowy format żądania.', 400, cors)
-    }
-    const parsed = analyzeRequestSchema.safeParse(body)
-    if (!parsed.success) {
-      const tooLong = parsed.error.issues.some((issue) => issue.code === 'too_big')
-      return tooLong
-        ? errorResponse('PAYLOAD_TOO_LARGE', 'Dokument zawiera zbyt dużo tekstu.', 413, cors)
-        : errorResponse('BAD_REQUEST', 'Nieprawidłowe dane dokumentu.', 400, cors)
-    }
-
     const generate = createGeminiClient({
       apiKey: env.GEMINI_API_KEY,
       models: parseModelList(env.GEMINI_MODELS),
     })
     try {
-      const result = await analyzeDocument(parsed.data, generate)
+      const result =
+        url.pathname === '/api/analyze-scan'
+          ? await handleScan(request, generate)
+          : await handleText(request, generate)
       return jsonResponse({ ok: true, result }, 200, cors)
     } catch (error) {
+      if (error instanceof RequestError) {
+        return errorResponse(error.code, error.message, error.status, cors)
+      }
       if (error instanceof AiInvalidResponseError) {
         console.error(`AI invalid response: ${error.message}`)
         return errorResponse(

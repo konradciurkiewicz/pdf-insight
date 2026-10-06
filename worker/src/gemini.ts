@@ -3,6 +3,10 @@ import { z } from 'zod'
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 /** Na model — przy przeciążeniu lepiej szybko przejść na kolejny, niż czekać. */
 const REQUEST_TIMEOUT_MS = 20_000
+/** OCR skanu trwa dłużej niż analiza samego tekstu. */
+const PDF_REQUEST_TIMEOUT_MS = 40_000
+/** Znacznik podmieniany na base64 PDF już po JSON.stringify — patrz `buildRequestBody`. */
+const PDF_PLACEHOLDER = '__PDF_BASE64__'
 
 /** Błąd po stronie dostawcy AI (sieć, limit, 5xx). `retryable` = warto spróbować ponownie. */
 export class UpstreamError extends Error {
@@ -21,6 +25,38 @@ export interface GenerateJsonRequest {
   user: string
   /** JSON Schema odpowiedzi — Gemini wymusza strukturę po swojej stronie (structured output). */
   responseSchema: Record<string, unknown>
+  /**
+   * Plik PDF (base64) dla skanów — Gemini odczytuje go sam (OCR). NIEZMIENNIK: musi pochodzić
+   * z `Uint8Array.toBase64()`, bo `buildRequestBody` wstawia go do JSON bez escapowania.
+   */
+  pdfBase64?: string
+}
+
+/**
+ * Ciało żądania do Gemini. Base64 skanu (do ~13 MB) wstawiamy po serializacji zamiast przepuszczać
+ * przez JSON.stringify — oszczędzamy czas CPU (darmowy plan Workers: ~10 ms CPU na żądanie).
+ * Bezpieczne, bo `pdfBase64` tworzy worker (`Uint8Array.toBase64`), a alfabet base64 nie zawiera
+ * znaków wymagających escapowania w JSON.
+ */
+export function buildRequestBody(model: string, request: GenerateJsonRequest): string {
+  const { system, user, responseSchema, pdfBase64 } = request
+  const parts: Record<string, unknown>[] = [{ text: user }]
+  if (pdfBase64)
+    parts.unshift({ inlineData: { mimeType: 'application/pdf', data: PDF_PLACEHOLDER } })
+
+  const json = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+      responseJsonSchema: responseSchema,
+      thinkingConfig: thinkingConfigFor(model),
+    },
+  })
+  if (!pdfBase64) return json
+  // Funkcja jako drugi argument — `$` w danych nie jest interpretowane jako wzorzec zamiany.
+  return json.replace(`"${PDF_PLACEHOLDER}"`, () => `"${pdfBase64}"`)
 }
 
 /** Abstrakcja nad modelem — pozwala testować logikę analizy bez sieci. */
@@ -79,27 +115,17 @@ export function createGeminiClient(options: {
     throw lastError ?? new UpstreamError('All models failed', 503, true)
   }
 
-  async function callModel(
-    model: string,
-    { system, user, responseSchema }: GenerateJsonRequest,
-  ): Promise<string> {
+  async function callModel(model: string, request: GenerateJsonRequest): Promise<string> {
     const url = `${API_BASE}/${encodeURIComponent(model)}:generateContent`
     let response: Response
     try {
       response = await fetchFn(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: user }] }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: 'application/json',
-            responseJsonSchema: responseSchema,
-            thinkingConfig: thinkingConfigFor(model),
-          },
-        }),
+        signal: AbortSignal.timeout(
+          request.pdfBase64 ? PDF_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
+        ),
+        body: buildRequestBody(model, request),
       })
     } catch (error) {
       const timedOut = error instanceof Error && error.name === 'TimeoutError'

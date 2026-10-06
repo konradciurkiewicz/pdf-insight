@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "es2023",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "ESNext.TypedArrays"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,

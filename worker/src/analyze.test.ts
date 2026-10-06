@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { analysisResultSchema, type AiAnalysis } from '@pdf-insight/shared'
-import { AiInvalidResponseError, analyzeDocument, CHUNK_CHARS, mergeFacts } from './analyze'
+import {
+  AiInvalidResponseError,
+  analyzeDocument,
+  analyzeScan,
+  CHUNK_CHARS,
+  mergeFacts,
+} from './analyze'
 import { UpstreamError, type GenerateJson } from './gemini'
 
 const validAi: AiAnalysis = {
@@ -106,5 +112,29 @@ describe('mergeFacts', () => {
     expect(merged.entities.people).toEqual(['Jan Kowalski'])
     expect(merged.amounts).toHaveLength(2)
     expect(merged.dates).toHaveLength(1)
+  })
+})
+
+describe('analyzeScan (OCR)', () => {
+  const meta = { fileName: 'skan.pdf', pages: 2 }
+
+  it('wysyła PDF do modelu z promptem OCR, a fileName/pages bierze z żądania', async () => {
+    const generate = fakeModel(JSON.stringify(validAi))
+    const result = await analyzeScan(meta, 'JVBERi0x', generate)
+
+    const call = generate.mock.calls[0]?.[0]
+    expect(call?.pdfBase64).toBe('JVBERi0x')
+    expect(call?.system).toContain('OCR')
+    expect(call?.system).toContain('untrusted data')
+    expect(result.document).toMatchObject({ fileName: 'skan.pdf', pages: 2 })
+    expect(analysisResultSchema.safeParse(result).success).toBe(true)
+  })
+
+  it('ponowna próba po złej odpowiedzi ponownie wysyła ten sam plik', async () => {
+    const generate = fakeModel('nie JSON', JSON.stringify(validAi))
+    await analyzeScan(meta, 'JVBERi0x', generate)
+
+    expect(generate).toHaveBeenCalledTimes(2)
+    expect(generate.mock.calls[1]?.[0].pdfBase64).toBe('JVBERi0x')
   })
 })

@@ -9,6 +9,13 @@ export const LIMITS = {
   maxTextChars: 400_000,
   /** Minimalna długość tekstu — poniżej traktujemy PDF jako skan bez warstwy tekstowej. */
   minTextChars: 50,
+  /**
+   * Maks. liczba stron skanu do OCR. Liczbę stron podaje klient, więc to kontrola UX, nie
+   * zabezpieczenie — granicą po stronie serwera jest `maxScanBytes`.
+   */
+  maxScanPages: 20,
+  /** Maks. rozmiar skanu wysyłanego w całości do Gemini — egzekwowany w Workerze. */
+  maxScanBytes: 4 * 1024 * 1024,
 } as const
 
 /** Ciało żądania POST /api/analyze. */
@@ -19,6 +26,20 @@ export const analyzeRequestSchema = z.object({
 })
 
 export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>
+
+/**
+ * POST /api/analyze-scan — skan bez warstwy tekstowej (F-10, OCR przez Gemini).
+ * Ciało żądania to surowe bajty PDF (`application/pdf`); metadane w nagłówkach `SCAN_HEADERS`
+ * (nie w URL — adresy żądań trafiają do logów, a nazwa pliku może zawierać dane osobowe).
+ */
+export const SCAN_HEADERS = { fileName: 'X-File-Name', pages: 'X-Pages' } as const
+
+export const analyzeScanMetaSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  pages: z.coerce.number().int().positive().max(LIMITS.maxScanPages),
+})
+
+export type AnalyzeScanMeta = z.infer<typeof analyzeScanMetaSchema>
 
 export type AnalyzeErrorCode =
   | 'BAD_REQUEST'

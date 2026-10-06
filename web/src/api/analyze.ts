@@ -4,6 +4,8 @@ import {
   type AnalysisResult,
   type AnalyzeErrorCode,
   type AnalyzeRequest,
+  type AnalyzeScanMeta,
+  SCAN_HEADERS,
 } from '@pdf-insight/shared'
 
 const API_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
@@ -36,15 +38,37 @@ const KNOWN_CODES: readonly AnalyzeErrorCode[] = [
   'INTERNAL',
 ]
 
-export async function analyzeText(request: AnalyzeRequest): Promise<AnalysisResult> {
+export function analyzeText(request: AnalyzeRequest): Promise<AnalysisResult> {
+  return postAnalysis('/api/analyze', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+}
+
+/** F-10: skan bez warstwy tekstowej — wysyłamy sam plik, Gemini rozpoznaje tekst (OCR). */
+export function analyzeScan(file: File, meta: AnalyzeScanMeta): Promise<AnalysisResult> {
+  return postAnalysis('/api/analyze-scan', {
+    headers: {
+      'Content-Type': 'application/pdf',
+      // Nagłówki HTTP przyjmują tylko ASCII — polskie znaki w nazwie pliku kodujemy.
+      [SCAN_HEADERS.fileName]: encodeURIComponent(meta.fileName),
+      [SCAN_HEADERS.pages]: String(meta.pages),
+    },
+    body: file,
+  })
+}
+
+async function postAnalysis(
+  path: string,
+  init: { headers: Record<string, string>; body: BodyInit },
+): Promise<AnalysisResult> {
   if (!API_URL) throw new AnalyzeError('Brak konfiguracji adresu API (VITE_API_URL).', 'CONFIG')
 
   let response: Response
   try {
-    response = await fetch(`${API_URL}/api/analyze`, {
+    response = await fetch(`${API_URL}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
+      ...init,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
   } catch (error) {
