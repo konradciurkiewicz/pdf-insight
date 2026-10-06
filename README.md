@@ -12,18 +12,18 @@ uporządkowane dane JSON.
 
 ## Co potrafi
 
-| Wymaganie                      | Realizacja                                                                                                                                         |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F-01 Wgrywanie PDF (MUST)      | Drag & drop i wybór pliku; tylko PDF (MIME + sygnatura `%PDF-`), maks. 10 MB                                                                       |
-| F-02 Odczyt tekstu (MUST)      | pdf.js w przeglądarce — do API trafia tylko tekst, nie plik                                                                                        |
-| F-03 Podsumowanie (MUST)       | 3–5 zdań w języku dokumentu; prompt zakazuje zgadywania                                                                                            |
-| F-04 Dane strukturalne (MUST)  | Schemat Zod walidowany w Workerze **i** przed wyświetleniem; 1 ponowna próba                                                                       |
-| F-05 Widok i eksport (MUST)    | Karty wyników, zakładka z podglądem JSON, pobranie `.json`                                                                                         |
-| F-06 Stany interfejsu (MUST)   | Ładowanie z etapami i czasem, błąd z ponowieniem, stan pusty                                                                                       |
-| F-07 Publiczne demo (MUST)     | GitHub Pages + Cloudflare Worker, deploy z GitHub Actions                                                                                          |
-| F-08 Długie dokumenty (SHOULD) | Podział na fragmenty → analiza równoległa → scalenie ([ADR 0004](docs/decisions/0004-long-documents-map-reduce.md))                                |
-| F-09 Historia analiz (SHOULD)  | Ostatnie 10 wyników w `localStorage`, walidowane przy odczycie                                                                                     |
-| F-10 OCR (COULD)               | Skan bez warstwy tekstowej (≤ 20 stron) trafia do Gemini jako PDF i jest odczytywany wizualnie ([ADR 0006](docs/decisions/0006-ocr-via-gemini.md)) |
+| Wymaganie                      | Realizacja                                                                                                                                                 |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-01 Wgrywanie PDF (MUST)      | Drag & drop i wybór pliku; tylko PDF (MIME + sygnatura `%PDF-`), maks. 10 MB                                                                               |
+| F-02 Odczyt tekstu (MUST)      | pdf.js w przeglądarce — do API trafia tylko tekst, nie plik                                                                                                |
+| F-03 Podsumowanie (MUST)       | 3–5 zdań w języku dokumentu; prompt zakazuje zgadywania                                                                                                    |
+| F-04 Dane strukturalne (MUST)  | Schemat Zod walidowany w Workerze **i** przed wyświetleniem; 1 ponowna próba                                                                               |
+| F-05 Widok i eksport (MUST)    | Karty wyników, zakładka z podglądem JSON, pobranie `.json`                                                                                                 |
+| F-06 Stany interfejsu (MUST)   | Ładowanie z etapami i czasem, błąd z ponowieniem, stan pusty                                                                                               |
+| F-07 Publiczne demo (MUST)     | GitHub Pages + Cloudflare Worker, deploy z GitHub Actions                                                                                                  |
+| F-08 Długie dokumenty (SHOULD) | Podział na fragmenty → analiza równoległa → scalenie ([ADR 0004](docs/decisions/0004-long-documents-map-reduce.md))                                        |
+| F-09 Historia analiz (SHOULD)  | Ostatnie 10 wyników w `localStorage`, walidowane przy odczycie                                                                                             |
+| F-10 OCR (COULD)               | Skan bez warstwy tekstowej (≤ 4 MB, ≤ 20 stron) trafia do Gemini jako PDF i jest odczytywany wizualnie ([ADR 0006](docs/decisions/0006-ocr-via-gemini.md)) |
 
 Zmierzone czasy (od wgrania pliku do wyniku): umowa 2 strony **~5 s**, raport ~300 tys. znaków
 (3 fragmenty + scalenie) **~11–13 s**.
@@ -103,7 +103,7 @@ informacja w UI, że tekst (a dla skanów cały plik) trafia do Google Gemini. P
 
 ## Znane ograniczenia
 
-- OCR tylko dla skanów do 20 stron; PDF z częścią stron tekstowych i częścią zeskanowanych jest
+- OCR tylko dla skanów do 4 MB i 20 stron; PDF z częścią stron tekstowych i częścią zeskanowanych jest
   analizowany wyłącznie po warstwie tekstowej.
 - Tabele z PDF trafiają do modelu jako tekst bez struktury.
 - Darmowy plan Gemini: przy dużym obciążeniu odpowiedź może się wydłużyć lub (gdy wszystkie modele

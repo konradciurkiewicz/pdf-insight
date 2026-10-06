@@ -25,7 +25,10 @@ export interface GenerateJsonRequest {
   user: string
   /** JSON Schema odpowiedzi — Gemini wymusza strukturę po swojej stronie (structured output). */
   responseSchema: Record<string, unknown>
-  /** Plik PDF (base64) dla skanów — Gemini odczytuje go sam (OCR). */
+  /**
+   * Plik PDF (base64) dla skanów — Gemini odczytuje go sam (OCR). NIEZMIENNIK: musi pochodzić
+   * z `Uint8Array.toBase64()`, bo `buildRequestBody` wstawia go do JSON bez escapowania.
+   */
   pdfBase64?: string
 }
 

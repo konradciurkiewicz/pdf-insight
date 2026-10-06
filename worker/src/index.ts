@@ -2,6 +2,7 @@ import {
   analyzeRequestSchema,
   analyzeScanMetaSchema,
   LIMITS,
+  SCAN_HEADERS,
   type AnalysisResult,
   type AnalyzeErrorCode,
 } from '@pdf-insight/shared'
@@ -41,6 +42,34 @@ function assertDeclaredLength(request: Request, maxBytes: number) {
   if (declared > maxBytes) throw tooLarge()
 }
 
+/**
+ * Czyta body strumieniowo i przerywa po przekroczeniu limitu — Content-Length może nie istnieć
+ * (Transfer-Encoding: chunked), więc nie wczytujemy całości „na ślepo”.
+ */
+async function readBytesLimited(request: Request, maxBytes: number): Promise<Uint8Array> {
+  const reader = request.body?.getReader()
+  if (!reader) return new Uint8Array()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel()
+      throw tooLarge('Skan jest zbyt duży do rozpoznania tekstu.')
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
 async function handleText(request: Request, generate: GenerateJson): Promise<AnalysisResult> {
   assertDeclaredLength(request, MAX_TEXT_BODY_BYTES)
   const rawBody = await request.text()
@@ -62,15 +91,17 @@ async function handleText(request: Request, generate: GenerateJson): Promise<Ana
   return analyzeDocument(parsed.data, generate)
 }
 
-/** F-10: skan bez warstwy tekstowej — surowe bajty PDF w body, metadane w query string. */
-async function handleScan(
-  request: Request,
-  url: URL,
-  generate: GenerateJson,
-): Promise<AnalysisResult> {
+/** F-10: skan bez warstwy tekstowej — surowe bajty PDF w body, metadane w nagłówkach. */
+async function handleScan(request: Request, generate: GenerateJson): Promise<AnalysisResult> {
+  let fileName: string | null = null
+  try {
+    fileName = decodeURIComponent(request.headers.get(SCAN_HEADERS.fileName) ?? '')
+  } catch {
+    // Niepoprawne kodowanie — walidacja poniżej odrzuci pustą nazwę.
+  }
   const meta = analyzeScanMetaSchema.safeParse({
-    fileName: url.searchParams.get('fileName'),
-    pages: url.searchParams.get('pages'),
+    fileName,
+    pages: request.headers.get(SCAN_HEADERS.pages),
   })
   if (!meta.success) {
     const tooManyPages = meta.error.issues.some((issue) => issue.path[0] === 'pages')
@@ -82,9 +113,9 @@ async function handleScan(
     throw new RequestError('BAD_REQUEST', 'Oczekiwano pliku PDF.', 400)
   }
 
-  assertDeclaredLength(request, LIMITS.maxFileBytes)
-  const bytes = new Uint8Array(await request.arrayBuffer())
-  if (bytes.byteLength > LIMITS.maxFileBytes) throw tooLarge()
+  // Rozmiar to jedyna granica, której klient nie może podrobić (liczbę stron deklaruje sam).
+  assertDeclaredLength(request, LIMITS.maxScanBytes)
+  const bytes = await readBytesLimited(request, LIMITS.maxScanBytes)
   // Ta sama kontrola sygnatury co we frontendzie — nie ufamy klientowi.
   if (!new TextDecoder().decode(bytes.subarray(0, 1024)).includes('%PDF-')) {
     throw new RequestError('BAD_REQUEST', 'Plik nie jest poprawnym dokumentem PDF.', 400)
@@ -141,7 +172,7 @@ export default {
     try {
       const result =
         url.pathname === '/api/analyze-scan'
-          ? await handleScan(request, url, generate)
+          ? await handleScan(request, generate)
           : await handleText(request, generate)
       return jsonResponse({ ok: true, result }, 200, cors)
     } catch (error) {

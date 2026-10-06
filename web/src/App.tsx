@@ -76,6 +76,17 @@ export default function App() {
 
     if (extracted.text.length < LIMITS.minTextChars) {
       // Brak warstwy tekstowej → skan. Plik trafia do Gemini, który rozpoznaje tekst (F-10).
+      if (file.size > LIMITS.maxScanBytes) {
+        const maxMb = LIMITS.maxScanBytes / 1024 / 1024
+        setPhase({
+          kind: 'error',
+          message:
+            `Ten PDF to skan bez warstwy tekstowej, a rozpoznawanie tekstu (OCR) obsługuje ` +
+            `pliki do ${maxMb} MB.`,
+          retry: null,
+        })
+        return
+      }
       if (extracted.pages > LIMITS.maxScanPages) {
         setPhase({
           kind: 'error',

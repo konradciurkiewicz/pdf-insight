@@ -5,6 +5,7 @@ import {
   type AnalyzeErrorCode,
   type AnalyzeRequest,
   type AnalyzeScanMeta,
+  SCAN_HEADERS,
 } from '@pdf-insight/shared'
 
 const API_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
@@ -46,9 +47,13 @@ export function analyzeText(request: AnalyzeRequest): Promise<AnalysisResult> {
 
 /** F-10: skan bez warstwy tekstowej — wysyłamy sam plik, Gemini rozpoznaje tekst (OCR). */
 export function analyzeScan(file: File, meta: AnalyzeScanMeta): Promise<AnalysisResult> {
-  const query = new URLSearchParams({ fileName: meta.fileName, pages: String(meta.pages) })
-  return postAnalysis(`/api/analyze-scan?${query}`, {
-    headers: { 'Content-Type': 'application/pdf' },
+  return postAnalysis('/api/analyze-scan', {
+    headers: {
+      'Content-Type': 'application/pdf',
+      // Nagłówki HTTP przyjmują tylko ASCII — polskie znaki w nazwie pliku kodujemy.
+      [SCAN_HEADERS.fileName]: encodeURIComponent(meta.fileName),
+      [SCAN_HEADERS.pages]: String(meta.pages),
+    },
     body: file,
   })
 }
