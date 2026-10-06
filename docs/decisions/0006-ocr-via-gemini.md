@@ -35,10 +35,9 @@ narzutu 33% na łączu), a base64 jest wstawiane do gotowego JSON-a żądania za
 | 4,06 MB | 54 ms | 4,9 s          | ok    |
 
 Lokalny mikropomiar samego `toBase64` (~2 ms / 4 MB) **zaniżał** koszt — pomijał składanie strumienia,
-budowę JSON i kodowanie body żądania. Skan bliski limitu przekracza nominalne 10 ms CPU darmowego
-planu; na tym koncie żądanie się powiodło, ale Cloudflare może ten limit egzekwować (błąd 1102).
-Plan B bez zmian w kodzie: obniżyć `LIMITS.maxScanBytes` (koszt rośnie liniowo, ~12 ms/MB) albo
-plan Workers Paid.
+budowę JSON i kodowanie body żądania. Konto hostujące Workera jest na planie **Workers Paid**
+(domyślny limit 30 s CPU na żądanie), więc 54 ms ma duży zapas. Przy wdrożeniu na darmowy plan
+(10 ms CPU) trzeba by obniżyć `LIMITS.maxScanBytes` — koszt rośnie liniowo, ~12 ms/MB.
 
 ## Konsekwencje
 
