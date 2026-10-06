@@ -1,6 +1,11 @@
 import { useState } from 'react'
-import { LIMITS, type AnalysisResult, type AnalyzeRequest } from '@pdf-insight/shared'
-import { analyzeText, AnalyzeError } from './api/analyze'
+import {
+  LIMITS,
+  type AnalysisResult,
+  type AnalyzeRequest,
+  type AnalyzeScanMeta,
+} from '@pdf-insight/shared'
+import { analyzeScan, analyzeText, AnalyzeError } from './api/analyze'
 import { DropZone } from './components/DropZone'
 import { ErrorPanel } from './components/ErrorPanel'
 import { HistoryList } from './components/HistoryList'
@@ -16,12 +21,16 @@ import {
 import { PdfReadError } from './lib/errors'
 import { validatePdfFile } from './lib/validateFile'
 
+/** Zadanie dla API: tekst wyciągnięty w przeglądarce albo cały plik skanu (OCR po stronie AI). */
+type AnalysisJob =
+  { mode: 'text'; request: AnalyzeRequest } | { mode: 'scan'; file: File; meta: AnalyzeScanMeta }
+
 type Phase =
   | { kind: 'idle' }
   | { kind: 'working'; fileName: string; step: ProgressStep }
   | { kind: 'done'; result: AnalysisResult; historyId: string | null }
-  /** `retry` — tekst ostatniego pliku: ponawiamy samą analizę AI, bez ponownego odczytu PDF. */
-  | { kind: 'error'; message: string; retry: AnalyzeRequest | null }
+  /** `retry` — ponawiamy samą analizę AI, bez ponownego odczytu PDF. */
+  | { kind: 'error'; message: string; retry: AnalysisJob | null }
 
 function errorMessage(error: unknown): string {
   if (error instanceof PdfReadError || error instanceof AnalyzeError) return error.message
@@ -32,16 +41,18 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
 
-  async function runAnalysis(request: AnalyzeRequest) {
-    setPhase({ kind: 'working', fileName: request.fileName, step: 'analyzing' })
+  async function runAnalysis(job: AnalysisJob) {
+    const fileName = job.mode === 'text' ? job.request.fileName : job.meta.fileName
+    setPhase({ kind: 'working', fileName, step: job.mode === 'text' ? 'analyzing' : 'ocr' })
     try {
-      const result = await analyzeText(request)
+      const result =
+        job.mode === 'text' ? await analyzeText(job.request) : await analyzeScan(job.file, job.meta)
       const entries = addToHistory(result)
       setHistory(entries)
       setPhase({ kind: 'done', result, historyId: entries[0]?.id ?? null })
     } catch (error) {
       const retryable = !(error instanceof AnalyzeError && error.code === 'PAYLOAD_TOO_LARGE')
-      setPhase({ kind: 'error', message: errorMessage(error), retry: retryable ? request : null })
+      setPhase({ kind: 'error', message: errorMessage(error), retry: retryable ? job : null })
     }
   }
 
@@ -64,12 +75,21 @@ export default function App() {
     }
 
     if (extracted.text.length < LIMITS.minTextChars) {
-      setPhase({
-        kind: 'error',
-        message:
-          'Nie znaleziono tekstu w tym PDF. Prawdopodobnie to skan lub same obrazy — ' +
-          'aplikacja obsługuje tylko pliki z warstwą tekstową.',
-        retry: null,
+      // Brak warstwy tekstowej → skan. Plik trafia do Gemini, który rozpoznaje tekst (F-10).
+      if (extracted.pages > LIMITS.maxScanPages) {
+        setPhase({
+          kind: 'error',
+          message:
+            `Ten PDF to skan bez warstwy tekstowej, a rozpoznawanie tekstu (OCR) obsługuje ` +
+            `maksymalnie ${LIMITS.maxScanPages} stron. Ten plik ma ${extracted.pages}.`,
+          retry: null,
+        })
+        return
+      }
+      await runAnalysis({
+        mode: 'scan',
+        file,
+        meta: { fileName: file.name, pages: extracted.pages },
       })
       return
     }
@@ -82,7 +102,10 @@ export default function App() {
       return
     }
 
-    await runAnalysis({ fileName: file.name, pages: extracted.pages, text: extracted.text })
+    await runAnalysis({
+      mode: 'text',
+      request: { fileName: file.name, pages: extracted.pages, text: extracted.text },
+    })
   }
 
   const reset = () => setPhase({ kind: 'idle' })
@@ -104,9 +127,10 @@ export default function App() {
           <>
             <DropZone onFile={handleFile} />
             <p className="notice">
-              <strong>Prywatność:</strong> tekst z pliku jest wysyłany do zewnętrznej usługi AI
-              (Google Gemini) wyłącznie w celu analizy. Nie wgrywaj dokumentów zawierających dane
-              wrażliwe. Wyniki zapisują się tylko w Twojej przeglądarce.
+              <strong>Prywatność:</strong> tekst z pliku (a w przypadku skanów — cały plik) jest
+              wysyłany do zewnętrznej usługi AI (Google Gemini) wyłącznie w celu analizy. Nie
+              wgrywaj dokumentów zawierających dane wrażliwe. Wyniki zapisują się tylko w Twojej
+              przeglądarce.
             </p>
           </>
         )}
@@ -128,7 +152,7 @@ export default function App() {
             <ol className="how">
               <li>
                 <strong>Wgraj PDF</strong>
-                <span>Umowa, faktura, oferta, raport…</span>
+                <span>Umowa, faktura, oferta, raport… także skan</span>
               </li>
               <li>
                 <strong>Analiza AI</strong>

@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 
-export type ProgressStep = 'reading' | 'analyzing'
+export type ProgressStep = 'reading' | 'analyzing' | 'ocr'
 
-const STEPS: { id: ProgressStep; label: string }[] = [
+const TEXT_STEPS: { id: ProgressStep; label: string }[] = [
   { id: 'reading', label: 'Odczyt tekstu z PDF' },
   { id: 'analyzing', label: 'Analiza AI: podsumowanie i dane' },
+]
+
+const SCAN_STEPS: { id: ProgressStep; label: string }[] = [
+  { id: 'reading', label: 'Odczyt tekstu z PDF — brak warstwy tekstowej' },
+  { id: 'ocr', label: 'Rozpoznawanie skanu (OCR) i analiza AI' },
 ]
 
 interface ProgressStatusProps {
@@ -23,6 +28,7 @@ export function ProgressStatus({ fileName, step }: ProgressStatusProps) {
     return () => window.clearInterval(timer)
   }, [startedAt])
 
+  const STEPS = step === 'ocr' ? SCAN_STEPS : TEXT_STEPS
   const currentIndex = STEPS.findIndex((s) => s.id === step)
 
   return (
